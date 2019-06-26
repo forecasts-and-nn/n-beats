@@ -1,9 +1,15 @@
+import collections
+
 import numpy as np
 import tensorflow as tf
 
 EAGER_EXECUTION = False  # used for debugging.
 if EAGER_EXECUTION:
     tf.enable_eager_execution()
+
+
+def mae(y_true, y_pred):
+    return tf.reduce_sum(tf.abs(y_true - y_pred))
 
 
 def mse(y_true, y_pred):
@@ -81,8 +87,9 @@ def block(x, units=256, nb_thetas=64, block_type='generic', backcast_length=10, 
     return backcast, forecast
 
 
-def net(x, units=256, nb_layers=3, nb_thetas=3, nb_blocks=4,
-        block_types=['seasonality'] * 3, backcast_length=10, forecast_length=5):
+def net(x, units=256, nb_layers=2, nb_thetas=10, nb_blocks=3,
+        block_types=['seasonality'] * 2, backcast_length=10, forecast_length=5):
+    assert len(block_types) == nb_layers
     forecasts = []
     for j in range(nb_layers):
         skip_connections = []
@@ -98,17 +105,17 @@ def net(x, units=256, nb_layers=3, nb_thetas=3, nb_blocks=4,
 
 def get_data(length, test_starts_at, signal_type='generic', random=False):
     if random:
-        offset = np.random.rand() * 5
+        offset = np.random.rand() * 0.1
     else:
         offset = 1
     if signal_type in ['trend', 'generic']:
         x = np.arange(0, 1, 1 / length) + offset
     elif signal_type == 'seasonality':
-        x = np.cos(3 * np.pi * np.arange(0, 1, 1 / length)) + offset
+        random_period_coefficient = np.random.randint(low=1, high=6)
+        x = np.cos(random_period_coefficient * np.pi * np.arange(0, 1, 1 / length)) + offset
         # import matplotlib.pyplot as plt
         # plt.plot(x)
         # plt.show()
-        # exit(1)
     else:
         raise Exception('Unknown signal type.')
     x = np.expand_dims(x, axis=0)
@@ -122,7 +129,8 @@ def train():
     backcast_length = 10 * forecast_length  # 4H in [2H, 7H].
 
     signal_type = 'seasonality'
-    block_types = ['seasonality'] * 3
+    block_types = ['trend', 'seasonality']
+    # block_types = ['generic', 'generic']
 
     sess = tf.Session()
 
@@ -137,8 +145,9 @@ def train():
         y_true = tf.placeholder(dtype=tf.float32, shape=(None, forecast_length))
     res, output = net(x_inputs,
                       units=256,
-                      nb_layers=1,
+                      nb_layers=len(block_types),
                       nb_thetas=10,
+                      nb_blocks=3,
                       block_types=block_types,
                       backcast_length=backcast_length,
                       forecast_length=forecast_length)
@@ -146,18 +155,21 @@ def train():
     if EAGER_EXECUTION:
         exit(1)  # stop here. eager used for debugging.
 
-    loss = mse(y_true, output)
+    loss = mae(y_true, output)
     train_op = tf.compat.v1.train.AdamOptimizer(learning_rate=1e-4).minimize(loss)
 
     sess.run(tf.global_variables_initializer())
+    running_loss = collections.deque(maxlen=1000)
     for step in range(100000):
         x, y = get_data(length=backcast_length + forecast_length,
                         test_starts_at=backcast_length,
-                        signal_type=signal_type)
+                        signal_type=signal_type,
+                        random=True)
         feed_dict = {x_inputs: x, y_true: y}
-        sess.run(train_op, feed_dict)
+        current_loss, _ = sess.run([loss, train_op], feed_dict)
+        running_loss.append(current_loss)
         if step % 1000 == 0:
-            print(step, sess.run(loss, feed_dict))
+            print(step, np.mean(running_loss))
 
 
 if __name__ == '__main__':
