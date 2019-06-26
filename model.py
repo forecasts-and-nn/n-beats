@@ -31,6 +31,7 @@ def linear_space(length, fwd_looking=True):
         t = tf.linspace(0.0, tf.cast(length, tf.float32) - 1, tf.cast(length, tf.int32))
     else:
         t = tf.linspace(-tf.cast(length, tf.float32), 0.0, tf.cast(length, tf.int32))
+    t = t / tf.cast(tf.cast(length, tf.int32), tf.float32)  # normalise.
     return t
 
 
@@ -52,8 +53,8 @@ def trend_model(thetas, length, is_forecast=True):
 
 def seasonality_model(thetas, length, is_forecast=True):
     p = thetas.get_shape().as_list()[-1]
-    t1, t2 = linear_space_divided(length, is_forecast)
-    s1 = tf.stack([tf.cos(2 * np.pi * i * t1) for i in range(p)], axis=0) # cos(0) = 1.
+    t1, t2 = linear_space_divided(length, is_forecast)  # TODO: norm thos fucker
+    s1 = tf.stack([tf.cos(2 * np.pi * i * t1) for i in range(p)], axis=0)  # cos(0) = 1.
     s2 = tf.stack([tf.sin(2 * np.pi * i * t2) for i in range(p)], axis=0)
     S = tf.concat([s1, s2], axis=-1)
     return tf.matmul(thetas, S)
@@ -99,11 +100,11 @@ def get_data(length, test_starts_at, signal_type='generic', random=False):
     if random:
         offset = np.random.rand() * 5
     else:
-        offset = 0
+        offset = 1
     if signal_type in ['trend', 'generic']:
         x = np.arange(0, 1, 1 / length) + offset
     elif signal_type == 'seasonality':
-        x = np.cos(6 * np.pi * np.arange(0, 1, 1 / length)) + offset
+        x = np.cos(3 * np.pi * np.arange(0, 1, 1 / length)) + offset
         # import matplotlib.pyplot as plt
         # plt.plot(x)
         # plt.show()
