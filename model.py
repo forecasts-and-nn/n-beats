@@ -53,28 +53,26 @@ def trend_model(thetas, length, is_forecast=True):
 def seasonality_model(thetas, length, is_forecast=True):
     p = thetas.get_shape().as_list()[-1]
     t1, t2 = linear_space_divided(length, is_forecast)
-    s1 = tf.stack([tf.cos(2 * np.pi * i * t1) for i in range(p)], axis=0)
+    s1 = tf.stack([tf.cos(2 * np.pi * i * t1) for i in range(p)], axis=0) # cos(0) = 1.
     s2 = tf.stack([tf.sin(2 * np.pi * i * t2) for i in range(p)], axis=0)
-    # s1 = tf.map_fn(lambda z: tf.cos(2 * np.pi * z), t)
-    # s2 = tf.map_fn(lambda z: tf.sin(2 * np.pi * z), t)
     S = tf.concat([s1, s2], axis=-1)
     return tf.matmul(thetas, S)
 
 
-def block(x, units=64, block_type='generic', backcast_length=10, forecast_length=5):
+def block(x, units=256, nb_thetas=64, block_type='generic', backcast_length=10, forecast_length=5):
     for _ in range(4):
         x = tf.layers.Dense(units, activation='relu')(x)
-    theta_b = tf.layers.Dense(units)(x)
-    theta_f = tf.layers.Dense(units)(x)
+    theta_b = tf.layers.Dense(nb_thetas, activation='relu')(x)  # 3.1 Basic block. Phi_theta^f : R^{dim(x) -> theta_f.
+    theta_f = tf.layers.Dense(nb_thetas, activation='relu')(x)  # 3.1 Basic block. Phi_theta^b : R^{dim(x) -> theta_b.
 
     if block_type == 'generic':
-        backcast = tf.layers.Dense(backcast_length)(theta_b)  # generic.
-        forecast = tf.layers.Dense(forecast_length)(theta_f)  # generic.
+        backcast = tf.layers.Dense(backcast_length, activation='linear')(theta_b)  # generic. 3.3.
+        forecast = tf.layers.Dense(forecast_length, activation='linear')(theta_f)  # generic. 3.3.
     elif block_type == 'trend':
-        backcast = trend_model(theta_b, backcast_length, is_forecast=False)
+        backcast = trend_model(theta_b, backcast_length, is_forecast=False)  # 3.3 g_f = g_b
         forecast = trend_model(theta_f, forecast_length, is_forecast=True)
     elif block_type == 'seasonality':
-        backcast = seasonality_model(theta_b, backcast_length, is_forecast=False)
+        backcast = seasonality_model(theta_b, backcast_length, is_forecast=False)  # 3.3 g_f = g_b
         forecast = seasonality_model(theta_f, forecast_length, is_forecast=True)
     else:
         raise Exception('Unknown block_type.')
@@ -82,14 +80,14 @@ def block(x, units=64, block_type='generic', backcast_length=10, forecast_length
     return backcast, forecast
 
 
-def net(x, nb_layers=3, nb_thetas=3, nb_blocks=4, block_types=['seasonality'] * 3,
-        backcast_length=10, forecast_length=5):
+def net(x, units=256, nb_layers=3, nb_thetas=3, nb_blocks=4,
+        block_types=['seasonality'] * 3, backcast_length=10, forecast_length=5):
     forecasts = []
     for j in range(nb_layers):
         skip_connections = []
         for i in range(nb_blocks):
-            new_x, f = block(x, nb_thetas, block_types[j], backcast_length, forecast_length)
-            x = x - new_x
+            b, f = block(x, units, nb_thetas, block_types[j], backcast_length, forecast_length)
+            x = x - b
             skip_connections.append(f)
         y = tf.add_n(skip_connections)
         forecasts.append(y)
@@ -97,13 +95,15 @@ def net(x, nb_layers=3, nb_thetas=3, nb_blocks=4, block_types=['seasonality'] * 
     return x, y
 
 
-def get_data(length, test_starts_at, signal_type='generic'):
-    # offset = np.random.rand() * 5
-    offset = 0
+def get_data(length, test_starts_at, signal_type='generic', random=False):
+    if random:
+        offset = np.random.rand() * 5
+    else:
+        offset = 0
     if signal_type in ['trend', 'generic']:
         x = np.arange(0, 1, 1 / length) + offset
     elif signal_type == 'seasonality':
-        x = np.cos(2 * np.pi * np.arange(0, 1, 1 / length)) + offset
+        x = np.cos(6 * np.pi * np.arange(0, 1, 1 / length)) + offset
         # import matplotlib.pyplot as plt
         # plt.plot(x)
         # plt.show()
@@ -117,11 +117,11 @@ def get_data(length, test_starts_at, signal_type='generic'):
 
 
 def train():
-    backcast_length = 20
     forecast_length = 5
+    backcast_length = 10 * forecast_length  # 4H in [2H, 7H].
 
-    signal_type = 'generic'
-    block_types = ['generic'] * 3
+    signal_type = 'seasonality'
+    block_types = ['seasonality'] * 3
 
     sess = tf.Session()
 
@@ -135,7 +135,9 @@ def train():
         x_inputs = tf.placeholder(dtype=tf.float32, shape=(None, backcast_length))
         y_true = tf.placeholder(dtype=tf.float32, shape=(None, forecast_length))
     res, output = net(x_inputs,
-                      nb_thetas=8,
+                      units=256,
+                      nb_layers=1,
+                      nb_thetas=10,
                       block_types=block_types,
                       backcast_length=backcast_length,
                       forecast_length=forecast_length)
