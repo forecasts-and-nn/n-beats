@@ -23,13 +23,28 @@ def owa(y_true, y_pred, m=12):
 
 # https://machinelearningmastery.com/time-series-seasonality-with-python/
 
-def trend_model(thetas, p, length, is_forecast=True):
-    if is_forecast:
-        t = tf.linspace(0, length - 1, length)
+
+def linear_space(length, fwd_looking=True):
+    if fwd_looking:
+        t = tf.linspace(0.0, tf.cast(length, tf.float32) - 1, tf.cast(length, tf.int32))
     else:
-        t = tf.linspace(-length, 0, length)
-    t_p = tf.stack([t ** i for i in range(p)])
-    return t_p * thetas
+        t = tf.linspace(-tf.cast(length, tf.float32), 0.0, tf.cast(length, tf.int32))
+    return t
+
+
+def trend_model(thetas, length, is_forecast=True):
+    p = thetas.get_shape().as_list()[-1]
+    t = linear_space(length, fwd_looking=is_forecast)
+    T = tf.stack([t ** i for i in range(p)], axis=0)
+    return tf.matmul(thetas, T)
+
+
+def seasonality_model(theta, length, is_forecast=True):  # p is length(theta).
+    t = linear_space(length / 2 - 1, fwd_looking=is_forecast)
+    s1 = tf.map_fn(lambda z: tf.cos(2 * np.pi * z), t)
+    s2 = tf.map_fn(lambda z: tf.sin(2 * np.pi * z), t)
+    s = tf.concat([s1, s2], axis=-1)
+    return s * theta
 
 
 def block(x_input, units=64, block_type='generic', backcast_length=10, forecast_length=5):
@@ -43,11 +58,11 @@ def block(x_input, units=64, block_type='generic', backcast_length=10, forecast_
         backcast = tf.layers.Dense(backcast_length)(theta_b)  # generic.
         forecast = tf.layers.Dense(forecast_length)(theta_f)  # generic.
     elif block_type == 'trend':
-        backcast = trend_model(theta_b, tf.shape(theta_b)[-1], backcast_length, is_forecast=False)
-        forecast = trend_model(theta_f, tf.shape(theta_f)[-1], forecast_length, is_forecast=True)
+        backcast = trend_model(theta_b, backcast_length, is_forecast=False)
+        forecast = trend_model(theta_f, forecast_length, is_forecast=True)
     elif block_type == 'seasonality':
-        backcast = 1
-        forecast = 1
+        backcast = seasonality_model(theta_b, backcast_length, is_forecast=False)
+        forecast = seasonality_model(theta_f, forecast_length, is_forecast=True)
     else:
         raise Exception('Unknown block_type.')
 
@@ -55,7 +70,7 @@ def block(x_input, units=64, block_type='generic', backcast_length=10, forecast_
     return backcast, forecast
 
 
-def net(x, nb_layers=3, nb_blocks=4, block_types=['generic'] * 3, backcast_length=10, forecast_length=5):
+def net(x, nb_layers=3, nb_blocks=4, block_types=['trend'] * 3, backcast_length=10, forecast_length=5):
     forecasts = []
     for j in range(nb_layers):
         skip_connections = []
@@ -76,20 +91,23 @@ def train():
 
     sess = tf.Session()
 
-    tf_x = tf.placeholder(dtype=tf.float32, shape=(None, backcast_length))
-    tf_y = tf.placeholder(dtype=tf.float32, shape=(None, forecast_length))
-    res, y = net(tf_x, backcast_length=backcast_length, forecast_length=forecast_length)
-    loss = mse(tf_y, y)
+    x_inputs = tf.placeholder(dtype=tf.float32, shape=(None, backcast_length))
+    y_true = tf.placeholder(dtype=tf.float32, shape=(None, forecast_length))
+    res, output = net(x_inputs, backcast_length=backcast_length, forecast_length=forecast_length)
+    loss = mse(y_true, output)
     train_op = tf.compat.v1.train.AdamOptimizer(learning_rate=1e-4).minimize(loss)
 
     sess.run(tf.global_variables_initializer())
     for step in range(100000):
-        x = np.arange(0, 10, 10 / (backcast_length + forecast_length))
+        offset = np.random.rand() * 5
+        x = np.arange(0, 1, 1 / (backcast_length + forecast_length)) + offset
         x = np.expand_dims(x, axis=0)
         y = x[:, backcast_length:]
         x = x[:, :backcast_length]
-        feed_dict = {tf_x: x, tf_y: y}
-        print(step, sess.run([loss, train_op], feed_dict))
+        feed_dict = {x_inputs: x, y_true: y}
+        sess.run(train_op, feed_dict)
+        if step % 1000 == 0:
+            print(step, sess.run(loss, feed_dict))
 
 
 if __name__ == '__main__':
