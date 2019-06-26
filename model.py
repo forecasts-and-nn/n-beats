@@ -61,8 +61,7 @@ def seasonality_model(thetas, length, is_forecast=True):
     return tf.matmul(thetas, S)
 
 
-def block(x_input, units=64, block_type='generic', backcast_length=10, forecast_length=5):
-    x = x_input
+def block(x, units=64, block_type='generic', backcast_length=10, forecast_length=5):
     for _ in range(4):
         x = tf.layers.Dense(units, activation='relu')(x)
     theta_b = tf.layers.Dense(units)(x)
