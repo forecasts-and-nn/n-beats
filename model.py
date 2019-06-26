@@ -32,6 +32,15 @@ def linear_space(length, fwd_looking=True):
     return t
 
 
+def linear_space_divided(length, fwd_looking=True):
+    t1 = linear_space(length / 2, fwd_looking=fwd_looking)
+    if t1.get_shape().as_list()[-1] * 2 != length:
+        t2 = linear_space(length / 2 + 1, fwd_looking=fwd_looking)  # odd.
+    else:
+        t2 = t1  # even.
+    return t1, t2
+
+
 def trend_model(thetas, length, is_forecast=True):
     p = thetas.get_shape().as_list()[-1]
     t = linear_space(length, fwd_looking=is_forecast)
@@ -41,11 +50,7 @@ def trend_model(thetas, length, is_forecast=True):
 
 def seasonality_model(thetas, length, is_forecast=True):
     p = thetas.get_shape().as_list()[-1]
-    t1 = linear_space(length / 2, fwd_looking=is_forecast)
-    if t1.get_shape().as_list()[-1] * 2 != length:
-        t2 = linear_space(length / 2 + 1, fwd_looking=is_forecast)  # odd.
-    else:
-        t2 = t1  # even.
+    t1, t2 = linear_space_divided(length, is_forecast)
     s1 = tf.stack([tf.cos(2 * np.pi * i * t1) for i in range(p)], axis=0)
     s2 = tf.stack([tf.sin(2 * np.pi * i * t2) for i in range(p)], axis=0)
     # s1 = tf.map_fn(lambda z: tf.cos(2 * np.pi * z), t)
