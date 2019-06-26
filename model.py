@@ -59,11 +59,31 @@ def trend_model(thetas, length, is_forecast=True):
 
 def seasonality_model(thetas, length, is_forecast=True):
     p = thetas.get_shape().as_list()[-1]
-    t1, t2 = linear_space_divided(length, is_forecast)  # TODO: norm thos fucker
-    s1 = tf.stack([tf.cos(2 * np.pi * i * t1) for i in range(p)], axis=0)  # cos(0) = 1.
-    s2 = tf.stack([tf.sin(2 * np.pi * i * t2) for i in range(p)], axis=0)
-    S = tf.concat([s1, s2], axis=-1)
+    t = linear_space(length, is_forecast)
+    if p % 2 == 0:
+        max_p2 = max_p1 = p // 2
+    else:
+        max_p1 = p // 2
+        max_p2 = p - max_p1
+    s1 = tf.stack([tf.cos(2 * np.pi * i * t) for i in range(max_p1)], axis=0)  # cos(0) = 1.
+    s2 = tf.stack([tf.sin(2 * np.pi * i * t) for i in range(max_p2)], axis=0)
+    S = tf.concat([s1, s2], axis=0)
+    # big discontinuity here plt.plot(np.array(S[1, :]).flatten())
     return tf.matmul(thetas, S)
+
+
+# def seasonality_model(thetas, length, is_forecast=True):
+#     p = thetas.get_shape().as_list()[-1]
+#     t = linear_space(length, fwd_looking=is_forecast)
+#     s1 = tf.stack([tf.cos(2 * np.pi * i * t) for i in range(p)], axis=0)  # cos(0) = 1.
+#     # big discontinuity here plt.plot(np.array(S[1, :]).flatten())
+#
+#     # import matplotlib.pyplot as plt
+#     # plt.figure()
+#     # for ii in range(10):
+#     #     plt.plot(range(50), np.array(s1[ii, :]).flatten())
+#     # plt.show()
+#     return tf.matmul(thetas, s1)
 
 
 def block(x, units=256, nb_thetas=64, block_type='generic', backcast_length=10, forecast_length=5):
@@ -146,7 +166,7 @@ def train():
     res, output = net(x_inputs,
                       units=256,
                       nb_layers=len(block_types),
-                      nb_thetas=10,
+                      nb_thetas=forecast_length,
                       nb_blocks=3,
                       block_types=block_types,
                       backcast_length=backcast_length,
