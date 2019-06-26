@@ -96,12 +96,30 @@ def net(x, nb_layers=3, nb_thetas=3, nb_blocks=4, block_types=['seasonality'] * 
     return x, y
 
 
+def get_data(length, test_starts_at, signal_type='generic'):
+    offset = np.random.rand() * 5
+    if signal_type in ['trend', 'generic']:
+        x = np.arange(0, 1, 1 / length) + offset
+    elif signal_type == 'seasonality':
+        x = np.cos(2 * np.pi * np.arange(0, 1, 1 / length)) + offset
+        # import matplotlib.pyplot as plt
+        # plt.plot(x)
+        # plt.show()
+        # exit(1)
+    else:
+        raise Exception('Unknown signal type.')
+    x = np.expand_dims(x, axis=0)
+    y = x[:, test_starts_at:]
+    x = x[:, :test_starts_at]
+    return x, y
+
+
 def train():
     backcast_length = 20
     forecast_length = 5
 
-    signal_type = 'seasonality'
-    block_types = ['seasonality'] * 3
+    signal_type = 'generic'
+    block_types = ['generic'] * 3
 
     sess = tf.Session()
 
@@ -117,20 +135,9 @@ def train():
 
     sess.run(tf.global_variables_initializer())
     for step in range(100000):
-        offset = np.random.rand() * 5
-        if signal_type in ['trend', 'generic']:
-            x = np.arange(0, 1, 1 / (backcast_length + forecast_length)) + offset
-        elif signal_type == 'seasonality':
-            x = np.cos(2 * np.pi * np.arange(0, 1, 1 / (backcast_length + forecast_length))) + offset
-            # import matplotlib.pyplot as plt
-            # plt.plot(x)
-            # plt.show()
-            # exit(1)
-        else:
-            raise Exception('Unknown signal type.')
-        x = np.expand_dims(x, axis=0)
-        y = x[:, backcast_length:]
-        x = x[:, :backcast_length]
+        x, y = get_data(length=backcast_length + forecast_length,
+                        test_starts_at=backcast_length,
+                        signal_type=signal_type)
         feed_dict = {x_inputs: x, y_true: y}
         sess.run(train_op, feed_dict)
         if step % 1000 == 0:
