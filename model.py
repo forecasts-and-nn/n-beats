@@ -1,8 +1,10 @@
 import numpy as np
 import tensorflow as tf
 
+EAGER_EXECUTION = False  # used for debugging.
+if EAGER_EXECUTION:
+    tf.enable_eager_execution()
 
-# tf.enable_eager_execution()
 
 def mse(y_true, y_pred):
     return tf.reduce_sum(tf.square(y_true - y_pred))
@@ -78,7 +80,6 @@ def block(x_input, units=64, block_type='generic', backcast_length=10, forecast_
     else:
         raise Exception('Unknown block_type.')
 
-    backcast = x_input - backcast
     return backcast, forecast
 
 
@@ -88,7 +89,8 @@ def net(x, nb_layers=3, nb_thetas=3, nb_blocks=4, block_types=['seasonality'] * 
     for j in range(nb_layers):
         skip_connections = []
         for i in range(nb_blocks):
-            x, f = block(x, nb_thetas, block_types[j], backcast_length, forecast_length)
+            new_x, f = block(x, nb_thetas, block_types[j], backcast_length, forecast_length)
+            x = x - new_x
             skip_connections.append(f)
         y = tf.add_n(skip_connections)
         forecasts.append(y)
@@ -97,7 +99,8 @@ def net(x, nb_layers=3, nb_thetas=3, nb_blocks=4, block_types=['seasonality'] * 
 
 
 def get_data(length, test_starts_at, signal_type='generic'):
-    offset = np.random.rand() * 5
+    # offset = np.random.rand() * 5
+    offset = 0
     if signal_type in ['trend', 'generic']:
         x = np.arange(0, 1, 1 / length) + offset
     elif signal_type == 'seasonality':
@@ -123,13 +126,24 @@ def train():
 
     sess = tf.Session()
 
-    x_inputs = tf.placeholder(dtype=tf.float32, shape=(None, backcast_length))
-    y_true = tf.placeholder(dtype=tf.float32, shape=(None, forecast_length))
+    if EAGER_EXECUTION:
+        x, y = get_data(length=backcast_length + forecast_length,
+                        test_starts_at=backcast_length,
+                        signal_type=signal_type)
+        x_inputs = tf.constant(dtype=tf.float32, value=x)
+        y_true = tf.constant(dtype=tf.float32, value=y)
+    else:
+        x_inputs = tf.placeholder(dtype=tf.float32, shape=(None, backcast_length))
+        y_true = tf.placeholder(dtype=tf.float32, shape=(None, forecast_length))
     res, output = net(x_inputs,
-                      nb_thetas=10,
+                      nb_thetas=8,
                       block_types=block_types,
                       backcast_length=backcast_length,
                       forecast_length=forecast_length)
+
+    if EAGER_EXECUTION:
+        exit(1)  # stop here. eager used for debugging.
+
     loss = mse(y_true, output)
     train_op = tf.compat.v1.train.AdamOptimizer(learning_rate=1e-4).minimize(loss)
 
