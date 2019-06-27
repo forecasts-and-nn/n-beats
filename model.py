@@ -124,7 +124,7 @@ def get_data(length, test_starts_at, signal_type='generic', random=False):
         x = np.arange(0, 1, 1 / length) + offset
     elif signal_type == 'seasonality':
         random_period_coefficient = np.random.randint(low=1, high=6)
-        x = np.cos(random_period_coefficient * np.pi * np.arange(0, 1, 1 / length)) + offset
+        x = np.cos(random_period_coefficient * np.pi * np.arange(0, 1, 1 / length)) + np.arange(0, 1, 1 / length) + offset
         # import matplotlib.pyplot as plt
         # plt.plot(x)
         # plt.show()
