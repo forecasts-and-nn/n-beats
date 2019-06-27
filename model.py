@@ -57,40 +57,35 @@ def trend_model(thetas, length, is_forecast=True):
     return tf.matmul(thetas, T)
 
 
-def seasonality_model(thetas, length, is_forecast=True):
-    p = thetas.get_shape().as_list()[-1]
-    t = linear_space(length, is_forecast)
-    if p % 2 == 0:
-        max_p2 = max_p1 = p // 2
+def seasonality_model(thetas, h, is_forecast=True):
+    t = linear_space(h, is_forecast)
+    if h % 2 == 0:
+        max_p2 = max_p1 = h // 2
     else:
-        max_p1 = p // 2
-        max_p2 = p - max_p1
-    s1 = tf.stack([tf.cos(2 * np.pi * i * t) for i in range(max_p1)], axis=0)  # cos(0) = 1.
-    s2 = tf.stack([tf.sin(2 * np.pi * i * t) for i in range(max_p2)], axis=0)
+        max_p1 = h // 2
+        max_p2 = h - max_p1
+    # range(1, 3) => [1, 2].
+    s1 = tf.stack([tf.cos(2 * np.pi * i * t) for i in range(max_p1)], axis=0)  # H/2-1
+    s2 = tf.stack([tf.sin(2 * np.pi * i * t) for i in range(1, max_p2)], axis=0)
     S = tf.concat([s1, s2], axis=0)
-    # big discontinuity here plt.plot(np.array(S[1, :]).flatten())
     return tf.matmul(thetas, S)
-
-
-# def seasonality_model(thetas, length, is_forecast=True):
-#     p = thetas.get_shape().as_list()[-1]
-#     t = linear_space(length, fwd_looking=is_forecast)
-#     s1 = tf.stack([tf.cos(2 * np.pi * i * t) for i in range(p)], axis=0)  # cos(0) = 1.
-#     # big discontinuity here plt.plot(np.array(S[1, :]).flatten())
-#
-#     # import matplotlib.pyplot as plt
-#     # plt.figure()
-#     # for ii in range(10):
-#     #     plt.plot(range(50), np.array(s1[ii, :]).flatten())
-#     # plt.show()
-#     return tf.matmul(thetas, s1)
 
 
 def block(x, units=256, nb_thetas=64, block_type='generic', backcast_length=10, forecast_length=5):
     for _ in range(4):
         x = tf.layers.Dense(units, activation='relu')(x)
-    theta_b = tf.layers.Dense(nb_thetas, activation='relu')(x)  # 3.1 Basic block. Phi_theta^f : R^{dim(x) -> theta_f.
-    theta_f = tf.layers.Dense(nb_thetas, activation='relu')(x)  # 3.1 Basic block. Phi_theta^b : R^{dim(x) -> theta_b.
+
+    # 3.1 Basic block. Phi_theta^f : R^{dim(x)} -> theta_f.
+    # 3.1 Basic block. Phi_theta^b : R^{dim(x)} -> theta_b.
+    if block_type in ['generic', 'trend']:
+        theta_b = tf.layers.Dense(nb_thetas, activation='relu')(x)
+        theta_f = tf.layers.Dense(nb_thetas, activation='relu')(x)
+    elif block_type == 'seasonality':
+        # length(theta) is pre-defined here.
+        theta_b = tf.layers.Dense(backcast_length - 1, activation='relu')(x)
+        theta_f = tf.layers.Dense(forecast_length - 1, activation='relu')(x)
+    else:
+        raise Exception('Unknown block_type.')
 
     if block_type == 'generic':
         backcast = tf.layers.Dense(backcast_length, activation='linear')(theta_b)  # generic. 3.3.
@@ -149,8 +144,8 @@ def train():
     backcast_length = 10 * forecast_length  # 4H in [2H, 7H].
 
     signal_type = 'seasonality'
-    block_types = ['trend', 'seasonality']
-    # block_types = ['generic', 'generic']
+    # block_types = ['trend', 'seasonality']
+    block_types = ['trend', 'trend']
 
     sess = tf.Session()
 
@@ -166,7 +161,7 @@ def train():
     res, output = net(x_inputs,
                       units=256,
                       nb_layers=len(block_types),
-                      nb_thetas=forecast_length,
+                      nb_thetas=2,
                       nb_blocks=3,
                       block_types=block_types,
                       backcast_length=backcast_length,
@@ -188,8 +183,8 @@ def train():
         feed_dict = {x_inputs: x, y_true: y}
         current_loss, _ = sess.run([loss, train_op], feed_dict)
         running_loss.append(current_loss)
-        if step % 1000 == 0:
-            print(step, np.mean(running_loss))
+        if step % 10 == 0:
+            print(step, running_loss[-1], np.mean(running_loss))
 
 
 if __name__ == '__main__':
