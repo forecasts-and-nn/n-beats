@@ -183,8 +183,8 @@ def train():
         if step % 1000 == 0:
             predictions = sess.run(output, feed_dict)
             import matplotlib.pyplot as plt
-            plt.plot(np.concatenate([x, y], axis=-1).flatten(), c='g')
-            plt.plot(np.concatenate([x, predictions], axis=-1).flatten(), c='r')
+            plt.plot(np.concatenate([x, y], axis=-1).flatten(), 'o--', c='blue')
+            plt.plot(np.concatenate([x, predictions], axis=-1).flatten(), c='red')
             plt.show()
             print(step, running_loss[-1], np.mean(running_loss))
 
