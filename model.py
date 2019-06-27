@@ -117,14 +117,14 @@ def net(x, units=256, nb_layers=2, nb_thetas=10, nb_blocks=3,
 
 def get_data(length, test_starts_at, signal_type='generic', random=False):
     if random:
-        offset = np.random.rand() * 0.1
+        offset = np.random.standard_normal() * 0.1
     else:
         offset = 1
     if signal_type in ['trend', 'generic']:
         x = np.arange(0, 1, 1 / length) + offset
     elif signal_type == 'seasonality':
         random_period_coefficient = np.random.randint(low=1, high=6)
-        x = np.cos(random_period_coefficient * np.pi * np.arange(0, 1, 1 / length)) + (offset > 0) * np.arange(0, 1,
+        x = np.cos(random_period_coefficient * np.pi * np.arange(0, 1, 1 / length)) + np.sign(offset) * np.arange(0, 1,
                                                                                                                1 / length) + offset
         # import matplotlib.pyplot as plt
         # plt.plot(x)
@@ -138,8 +138,8 @@ def get_data(length, test_starts_at, signal_type='generic', random=False):
 
 
 def train():
-    forecast_length = 5
-    backcast_length = 10 * forecast_length  # 4H in [2H, 7H].
+    forecast_length = 8
+    backcast_length = 4 * forecast_length  # 4H in [2H, 7H].
 
     signal_type = 'seasonality'
     block_types = ['trend', 'seasonality']
