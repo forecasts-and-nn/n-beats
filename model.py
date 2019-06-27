@@ -78,8 +78,8 @@ def block(x, units=256, nb_thetas=64, block_type='generic', backcast_length=10, 
     # 3.1 Basic block. Phi_theta^f : R^{dim(x)} -> theta_f.
     # 3.1 Basic block. Phi_theta^b : R^{dim(x)} -> theta_b.
     if block_type == 'generic':
-        theta_b = tf.layers.Dense(nb_thetas, activation='relu')(x)
-        theta_f = tf.layers.Dense(nb_thetas, activation='relu')(x)
+        theta_b = tf.layers.Dense(nb_thetas, activation='linear')(x)
+        theta_f = tf.layers.Dense(nb_thetas, activation='linear')(x)
         backcast = tf.layers.Dense(backcast_length, activation='linear')(theta_b)  # generic. 3.3.
         forecast = tf.layers.Dense(forecast_length, activation='linear')(theta_f)  # generic. 3.3.
     elif block_type == 'trend':
