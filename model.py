@@ -141,7 +141,7 @@ def train():
     backcast_length = 10 * forecast_length  # 4H in [2H, 7H].
 
     signal_type = 'seasonality'
-    block_types = ['generic', 'generic']
+    block_types = ['trend', 'seasonality']
     # block_types = ['trend', 'seasonality']
 
     sess = tf.Session()
@@ -171,8 +171,8 @@ def train():
     train_op = tf.compat.v1.train.AdamOptimizer(learning_rate=1e-4).minimize(loss)
 
     sess.run(tf.global_variables_initializer())
-    running_loss = collections.deque(maxlen=1000)
-    for step in range(100000):
+    running_loss = collections.deque(maxlen=100)
+    for step in range(1000000):
         x, y = get_data(length=backcast_length + forecast_length,
                         test_starts_at=backcast_length,
                         signal_type=signal_type,
@@ -181,6 +181,11 @@ def train():
         current_loss, _ = sess.run([loss, train_op], feed_dict)
         running_loss.append(current_loss)
         if step % 1000 == 0:
+            predictions = sess.run(output, feed_dict)
+            import matplotlib.pyplot as plt
+            plt.plot(np.concatenate([x, y], axis=-1).flatten(), c='g')
+            plt.plot(np.concatenate([x, predictions], axis=-1).flatten(), c='r')
+            plt.show()
             print(step, running_loss[-1], np.mean(running_loss))
 
 
