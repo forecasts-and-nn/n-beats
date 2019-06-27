@@ -124,7 +124,8 @@ def get_data(length, test_starts_at, signal_type='generic', random=False):
         x = np.arange(0, 1, 1 / length) + offset
     elif signal_type == 'seasonality':
         random_period_coefficient = np.random.randint(low=1, high=6)
-        x = np.cos(random_period_coefficient * np.pi * np.arange(0, 1, 1 / length)) + np.arange(0, 1, 1 / length) + offset
+        x = np.cos(random_period_coefficient * np.pi * np.arange(0, 1, 1 / length)) + (offset > 0) * np.arange(0, 1,
+                                                                                                               1 / length) + offset
         # import matplotlib.pyplot as plt
         # plt.plot(x)
         # plt.show()
@@ -183,8 +184,15 @@ def train():
         if step % 1000 == 0:
             predictions = sess.run(output, feed_dict)
             import matplotlib.pyplot as plt
-            plt.plot(np.concatenate([x, y], axis=-1).flatten(), 'o--', c='blue')
-            plt.plot(np.concatenate([x, predictions], axis=-1).flatten(), c='red')
+            plt.grid(True)
+            x_y = np.concatenate([x, y], axis=-1).flatten()
+
+            plt.scatter(range(len(x_y)), x_y.flatten(), color=['b'] * backcast_length + ['g'] * forecast_length)
+            plt.plot(list(range(backcast_length)), x.flatten(), color='b')
+            plt.plot(list(range(len(x_y) - forecast_length, len(x_y))), y.flatten(), color='g')
+            plt.scatter(list(range(len(x_y) - forecast_length, len(x_y))), predictions.flatten(), color=['r'] * forecast_length)
+            plt.plot(list(range(len(x_y) - forecast_length, len(x_y))), predictions.flatten(), color='r')
+            # plt.plot(np.concatenate([x, predictions], axis=-1).flatten(), c='red')
             plt.show()
             print(step, running_loss[-1], np.mean(running_loss))
 
