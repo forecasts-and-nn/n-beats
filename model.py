@@ -43,7 +43,7 @@ def linear_space(length, fwd_looking=True):
 
 def trend_model(thetas, length, is_forecast=True):
     p = thetas.get_shape().as_list()[-1]
-    t = linear_space(length, fwd_looking=True)
+    t = linear_space(length, fwd_looking=is_forecast)
     T = tf.stack([t ** i for i in range(p)], axis=0)
     return tf.matmul(thetas, T)
 
