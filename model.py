@@ -50,7 +50,7 @@ def trend_model(thetas, length, is_forecast=True):
 
 def seasonality_model(thetas, h, is_forecast=True):
     p = thetas.get_shape().as_list()[-1]
-    t = linear_space(h, fwd_looking=True)
+    t = linear_space(h, fwd_looking=is_forecast)
     p1, p2 = (p // 2, p // 2) if p % 2 == 0 else (p // 2, p // 2 + 1)
     s1 = tf.stack([tf.cos(2 * np.pi * i * t) for i in range(p1)], axis=0)  # H/2-1
     s2 = tf.stack([tf.sin(2 * np.pi * i * t) for i in range(p2)], axis=0)
