@@ -123,9 +123,11 @@ def get_data(length, test_starts_at, signal_type='generic', random=False):
     if signal_type in ['trend', 'generic']:
         x = np.arange(0, 1, 1 / length) + offset
     elif signal_type == 'seasonality':
-        random_period_coefficient = np.random.randint(low=1, high=6)
+        random_period_coefficient = np.random.randint(low=6, high=10)
+        random_period_coefficient_2 = np.random.randint(low=2, high=6)
         x = np.cos(random_period_coefficient * np.pi * np.arange(0, 1, 1 / length)) + np.sign(offset) * np.arange(0, 1,
-                                                                                                               1 / length) + offset
+                                                                                                                  1 / length) + offset
+        x += np.cos(random_period_coefficient_2 * np.pi * np.arange(0, 1, 1 / length))
         # import matplotlib.pyplot as plt
         # plt.plot(x)
         # plt.show()
@@ -138,8 +140,8 @@ def get_data(length, test_starts_at, signal_type='generic', random=False):
 
 
 def train():
-    forecast_length = 8
-    backcast_length = 4 * forecast_length  # 4H in [2H, 7H].
+    forecast_length = 20
+    backcast_length = 3 * forecast_length  # 4H in [2H, 7H].
 
     signal_type = 'seasonality'
     block_types = ['trend', 'seasonality']
@@ -181,19 +183,21 @@ def train():
         feed_dict = {x_inputs: x, y_true: y}
         current_loss, _ = sess.run([loss, train_op], feed_dict)
         running_loss.append(current_loss)
-        if step % 1000 == 0:
-            predictions = sess.run(output, feed_dict)
-            import matplotlib.pyplot as plt
-            plt.grid(True)
-            x_y = np.concatenate([x, y], axis=-1).flatten()
-
-            plt.scatter(range(len(x_y)), x_y.flatten(), color=['b'] * backcast_length + ['g'] * forecast_length)
-            plt.plot(list(range(backcast_length)), x.flatten(), color='b')
-            plt.plot(list(range(len(x_y) - forecast_length, len(x_y))), y.flatten(), color='g')
-            plt.scatter(list(range(len(x_y) - forecast_length, len(x_y))), predictions.flatten(), color=['r'] * forecast_length)
-            plt.plot(list(range(len(x_y) - forecast_length, len(x_y))), predictions.flatten(), color='r')
-            # plt.plot(np.concatenate([x, predictions], axis=-1).flatten(), c='red')
-            plt.show()
+        if step % 100 == 0:
+            if step % 2000 == 0:
+                predictions = sess.run(output, feed_dict)
+                import matplotlib.pyplot as plt
+                plt.grid(True)
+                x_y = np.concatenate([x, y], axis=-1).flatten()
+                plt.plot(list(range(backcast_length)), x.flatten(), color='b')
+                plt.plot(list(range(len(x_y) - forecast_length, len(x_y))), y.flatten(), color='g')
+                plt.plot(list(range(len(x_y) - forecast_length, len(x_y))), predictions.flatten(), color='r')
+                plt.scatter(range(len(x_y)), x_y.flatten(), color=['b'] * backcast_length + ['g'] * forecast_length)
+                plt.scatter(list(range(len(x_y) - forecast_length, len(x_y))), predictions.flatten(),
+                            color=['r'] * forecast_length)
+                plt.legend(['backtest', 'forecast', 'predictions of forecast'])
+                # plt.plot(np.concatenate([x, predictions], axis=-1).flatten(), c='red')
+                plt.show()
             print(step, running_loss[-1], np.mean(running_loss))
 
 
