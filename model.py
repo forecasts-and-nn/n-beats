@@ -58,7 +58,7 @@ def trend_model(thetas, length, is_forecast=True):
 
 
 def seasonality_model(thetas, h, is_forecast=True):
-    t = linear_space(h, is_forecast)
+    t = linear_space(h, fwd_looking=is_forecast)
     if h % 2 == 0:
         max_p2 = max_p1 = h // 2
     else:
@@ -99,20 +99,22 @@ def block(x, units=256, nb_thetas=64, block_type='generic', backcast_length=10, 
     return backcast, forecast
 
 
-def net(x, units=256, nb_layers=2, nb_thetas=10, nb_blocks=3,
+def net(x, units=256, nb_stacks=2, nb_thetas=10, nb_blocks=3,
         block_types=['seasonality'] * 2, backcast_length=10, forecast_length=5):
-    assert len(block_types) == nb_layers
+    backcasts = []
+    assert len(block_types) == nb_stacks
     forecasts = []
-    for j in range(nb_layers):
+    for j in range(nb_stacks):
         skip_connections = []
         for i in range(nb_blocks):
             b, f = block(x, units, nb_thetas, block_types[j], backcast_length, forecast_length)
             x = x - b
+            backcasts.append(x)
             skip_connections.append(f)
         y = tf.add_n(skip_connections)
         forecasts.append(y)
     y = tf.add_n(forecasts)
-    return x, y
+    return x, y, backcasts
 
 
 def get_data(length, test_starts_at, signal_type='generic', random=False):
@@ -125,12 +127,15 @@ def get_data(length, test_starts_at, signal_type='generic', random=False):
     elif signal_type == 'seasonality':
         random_period_coefficient = np.random.randint(low=6, high=10)
         random_period_coefficient_2 = np.random.randint(low=2, high=6)
-        x = np.cos(random_period_coefficient * np.pi * np.arange(0, 1, 1 / length)) + np.sign(offset) * np.arange(0, 1,
-                                                                                                                  1 / length) + offset
+        x = np.cos(random_period_coefficient * np.pi *
+                   np.arange(0, 1, 1 / length)) + np.sign(offset) * np.arange(0, 1, 1 / length) + offset
         x += np.cos(random_period_coefficient_2 * np.pi * np.arange(0, 1, 1 / length))
         # import matplotlib.pyplot as plt
         # plt.plot(x)
         # plt.show()
+    elif signal_type == 'simple_seasonality':
+        random_period_coefficient = np.random.randint(low=1, high=4)
+        x = np.cos(random_period_coefficient * np.pi * np.arange(0, 1, 1 / length)) + offset
     else:
         raise Exception('Unknown signal type.')
     x = np.expand_dims(x, axis=0)
@@ -139,12 +144,22 @@ def get_data(length, test_starts_at, signal_type='generic', random=False):
     return x, y
 
 
+def get_color_map(length):
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as colors
+    import matplotlib.cm as cmx
+    jet = plt.get_cmap('jet')
+    cNorm = colors.Normalize(vmin=0, vmax=length)
+    scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=jet)
+    return scalarMap
+
+
 def train():
     forecast_length = 20
     backcast_length = 3 * forecast_length  # 4H in [2H, 7H].
 
-    signal_type = 'seasonality'
-    block_types = ['trend', 'seasonality']
+    signal_type = 'simple_seasonality'
+    block_types = ['seasonality', 'seasonality']
     # block_types = ['trend', 'seasonality']
 
     sess = tf.Session()
@@ -158,14 +173,14 @@ def train():
     else:
         x_inputs = tf.placeholder(dtype=tf.float32, shape=(None, backcast_length))
         y_true = tf.placeholder(dtype=tf.float32, shape=(None, forecast_length))
-    res, output = net(x_inputs,
-                      units=256,
-                      nb_layers=len(block_types),
-                      nb_thetas=2,
-                      nb_blocks=3,
-                      block_types=block_types,
-                      backcast_length=backcast_length,
-                      forecast_length=forecast_length)
+    res, output, backcasts = net(x_inputs,
+                                 units=256,
+                                 nb_stacks=2,
+                                 nb_thetas=2,
+                                 nb_blocks=1,
+                                 block_types=block_types,
+                                 backcast_length=backcast_length,
+                                 forecast_length=forecast_length)
 
     if EAGER_EXECUTION:
         exit(1)  # stop here. eager used for debugging.
@@ -185,6 +200,7 @@ def train():
         running_loss.append(current_loss)
         if step % 100 == 0:
             if step % 2000 == 0:
+                backcasts_values = sess.run(backcasts, feed_dict)
                 predictions = sess.run(output, feed_dict)
                 import matplotlib.pyplot as plt
                 plt.grid(True)
@@ -195,9 +211,22 @@ def train():
                 plt.scatter(range(len(x_y)), x_y.flatten(), color=['b'] * backcast_length + ['g'] * forecast_length)
                 plt.scatter(list(range(len(x_y) - forecast_length, len(x_y))), predictions.flatten(),
                             color=['r'] * forecast_length)
-                plt.legend(['backtest', 'forecast', 'predictions of forecast'])
+                plt.legend(['backcast', 'forecast', 'predictions of forecast'])
                 # plt.plot(np.concatenate([x, predictions], axis=-1).flatten(), c='red')
                 plt.show()
+
+                # https://stackoverflow.com/questions/8931268/using-colormaps-to-set-color-of-line-in-matplotlib
+                # blue -> red
+                cmap = get_color_map(len(backcasts_values) + 1)
+                colorVal = cmap.to_rgba(0)
+                plt.plot(x.flatten(), color=colorVal)
+                for i, backcasts_value in enumerate(backcasts_values):
+                    colorVal = cmap.to_rgba(i + 1)
+                    plt.plot(backcasts_value.flatten(), color=colorVal)
+
+                plt.title('Backcast')
+                plt.show()
+
             print(step, running_loss[-1], np.mean(running_loss))
 
 
