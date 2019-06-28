@@ -32,25 +32,26 @@ def owa(y_true, y_pred, m=12):
 # https://machinelearningmastery.com/time-series-seasonality-with-python/
 
 
-def linear_space(length, fwd_looking=True):
+def linear_space(length, fwd_looking=True, norm_constant=None):
+    if norm_constant is None:
+        norm_constant = length
     if fwd_looking:
         t = tf.linspace(0.0, tf.cast(length, tf.float32), tf.cast(length, tf.int32))
     else:
         t = tf.linspace(-tf.cast(length, tf.float32), 0.0, tf.cast(length, tf.int32))
-    t = t / tf.cast(length, tf.float32)  # normalise.
+    assert norm_constant == 19
+    t = t / tf.cast(norm_constant, tf.float32)  # normalise.
     return t
 
 
-def trend_model(thetas, length, is_forecast=True):
+def trend_model(thetas, t):
     p = thetas.get_shape().as_list()[-1]
-    t = linear_space(length, fwd_looking=is_forecast)
     T = tf.stack([t ** i for i in range(p)], axis=0)
     return tf.matmul(thetas, T)
 
 
-def seasonality_model(thetas, h, is_forecast=True):
+def seasonality_model(thetas, t):
     p = thetas.get_shape().as_list()[-1]
-    t = linear_space(h, fwd_looking=is_forecast)
     p1, p2 = (p // 2, p // 2) if p % 2 == 0 else (p // 2, p // 2 + 1)
     s1 = tf.stack([tf.cos(2 * np.pi * i * t) for i in range(p1)], axis=0)  # H/2-1
     s2 = tf.stack([tf.sin(2 * np.pi * i * t) for i in range(p2)], axis=0)
@@ -58,7 +59,8 @@ def seasonality_model(thetas, h, is_forecast=True):
     return tf.matmul(thetas, S)
 
 
-def block(x, theta_transforms, units=256, nb_thetas=64, block_type='generic', backcast_length=10, forecast_length=5):
+def block(x, theta_transforms, units=256, nb_thetas=64, block_type='generic', backcast_length=10, forecast_length=5,
+          l_backcast=None, l_forecast=None):
     print(block_type)
     for _ in range(4):
         x = tf.layers.Dense(units, activation='relu')(x)
@@ -73,13 +75,13 @@ def block(x, theta_transforms, units=256, nb_thetas=64, block_type='generic', ba
         forecast = tf.layers.Dense(forecast_length, activation='linear')(theta_f)  # generic. 3.3.
     elif block_type == 'trend':
         theta_f = theta_b = theta_transforms['trend'](x)
-        backcast = trend_model(theta_b, backcast_length, is_forecast=False)  # 3.3 g_f = g_b
-        forecast = trend_model(theta_f, forecast_length, is_forecast=True)
+        backcast = trend_model(theta_b, l_backcast)
+        forecast = trend_model(theta_f, l_forecast)
     elif block_type == 'seasonality':
         # length(theta) is pre-defined here.
         theta_f = theta_b = theta_transforms['seasonality'](x)
-        backcast = seasonality_model(theta_b, backcast_length, is_forecast=False)  # 3.3 g_f = g_b
-        forecast = seasonality_model(theta_f, forecast_length, is_forecast=True)
+        backcast = seasonality_model(theta_b, l_backcast)
+        forecast = seasonality_model(theta_f, l_forecast)
     else:
         raise Exception('Unknown block_type.')
 
@@ -88,6 +90,10 @@ def block(x, theta_transforms, units=256, nb_thetas=64, block_type='generic', ba
 
 def net(x, units=256, nb_stacks=2, nb_thetas=10, nb_blocks=3,
         block_types=['seasonality'] * 2, backcast_length=10, forecast_length=5):
+    l = tf.linspace(-float(backcast_length), float(forecast_length),
+                    backcast_length + forecast_length) / forecast_length
+    l_backcast = l[:backcast_length]
+    l_forecast = l[backcast_length:]
     assert len(block_types) == nb_stacks
     metadata = {
         'backcasts': [],
@@ -98,13 +104,15 @@ def net(x, units=256, nb_stacks=2, nb_thetas=10, nb_blocks=3,
     theta_transforms = {
         'trend': tf.layers.Dense(nb_thetas, activation='linear'),
         # should be forecast_length but isn't it an error of the paper?
-        'seasonality': tf.layers.Dense(backcast_length, activation='linear')
+        'seasonality': tf.layers.Dense(10, activation='softmax')
     }
     forecasts = []
     for j in range(nb_stacks):
         block_connections = []
         for i in range(nb_blocks):
-            b, f = block(x, theta_transforms, units, nb_thetas, block_types[j], backcast_length, forecast_length)
+            b, f = block(x, theta_transforms, units, nb_thetas,
+                         block_types[j], backcast_length, forecast_length, l_backcast,
+                         l_forecast)
             x = x - b
             block_connections.append(f)
             metadata['forecasts'].append(f)
@@ -132,6 +140,8 @@ def get_data(length, test_starts_at, signal_type='generic', random=False):
         # import matplotlib.pyplot as plt
         # plt.plot(x)
         # plt.show()
+    elif signal_type == 'cos':
+        x = np.cos(2 * np.pi * np.linspace(-3 * 19, 19, 3 * 19 + 19) / 19)
     else:
         raise Exception('Unknown signal type.')
     x /= np.max(np.abs(x))
@@ -145,8 +155,8 @@ def train():
     forecast_length = 19
     backcast_length = 3 * forecast_length  # 4H in [2H, 7H].
 
-    signal_type = 'seasonality'
-    block_types = ['trend', 'seasonality']
+    signal_type = 'cos'
+    block_types = ['seasonality']
 
     sess = tf.Session()
 
@@ -163,7 +173,7 @@ def train():
                                 units=256,
                                 nb_stacks=len(block_types),
                                 nb_thetas=2,
-                                nb_blocks=3,
+                                nb_blocks=1,
                                 block_types=block_types,
                                 backcast_length=backcast_length,
                                 forecast_length=forecast_length)
@@ -185,25 +195,24 @@ def train():
         current_loss, _ = sess.run([loss, train_op], feed_dict)
         running_loss.append(current_loss)
         if step % 100 == 0:
-            if step % 2000 == 0:
-                predictions, residual = sess.run([output, res], feed_dict)
-                import matplotlib.pyplot as plt
-                plt.grid(True)
-                x_y = np.concatenate([x, y], axis=-1).flatten()
-                plt.plot(list(range(backcast_length)), x.flatten(), color='b')
-                plt.plot(list(range(len(x_y) - forecast_length, len(x_y))), y.flatten(), color='g')
-                plt.plot(list(range(len(x_y) - forecast_length, len(x_y))), predictions.flatten(), color='r')
-                plt.scatter(range(len(x_y)), x_y.flatten(), color=['b'] * backcast_length + ['g'] * forecast_length)
-                plt.scatter(list(range(len(x_y) - forecast_length, len(x_y))), predictions.flatten(),
-                            color=['r'] * forecast_length)
-                plt.legend(['backcast', 'forecast', 'predictions of forecast'])
-                plt.show()
+            predictions, residual = sess.run([output, res], feed_dict)
+            import matplotlib.pyplot as plt
+            plt.grid(True)
+            x_y = np.concatenate([x, y], axis=-1).flatten()
+            plt.plot(list(range(backcast_length)), x.flatten(), color='b')
+            plt.plot(list(range(len(x_y) - forecast_length, len(x_y))), y.flatten(), color='g')
+            plt.plot(list(range(len(x_y) - forecast_length, len(x_y))), predictions.flatten(), color='r')
+            plt.scatter(range(len(x_y)), x_y.flatten(), color=['b'] * backcast_length + ['g'] * forecast_length)
+            plt.scatter(list(range(len(x_y) - forecast_length, len(x_y))), predictions.flatten(),
+                        color=['r'] * forecast_length)
+            plt.legend(['backcast', 'forecast', 'predictions of forecast'])
+            plt.show()
 
-                # plt.plot(residual.flatten())
-                # plt.title('Residual')
-                # plt.show()
+            plt.plot(residual.flatten())
+            plt.title('Residual')
+            plt.show()
 
-            print(step, running_loss[-1], np.mean(running_loss))
+        print(step, running_loss[-1], np.mean(running_loss))
 
 
 if __name__ == '__main__':
